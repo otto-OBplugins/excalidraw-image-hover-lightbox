@@ -10,7 +10,7 @@
  *  - createHoverGate：防闪灭延迟状态机。指针离开图→按钮的途中保持显示，
  *    超时未重新命中才隐藏。时钟注入，可单测。
  *  - createHoverEntry：薄适配层（不深 mock）。接线 ea/DOM：监听指针、pan/zoom
- *    重算锚点、创建并定位 DOM 放大图标、点击图标 stopPropagation 打开 lightbox。
+ *    重算锚点、创建并定位 DOM 全屏图标、点击图标 stopPropagation 打开 lightbox。
  *    对外暴露 mount()/unmount() 给 04 全局挂载。
  *
  * 约束：入口按钮是 DOM 覆盖层，绝不写入 Excalidraw scene；点击图片本体不打开。
@@ -78,7 +78,7 @@ function createHoverGate(opts) {
 }
 
 /**
- * 薄适配层：把 ea/DOM 接线到上面的决策与状态机，实现右上角 DOM 放大图标。
+ * 薄适配层：把 ea/DOM 接线到上面的决策与状态机，实现右上角 DOM 全屏图标。
  * 点击图片本体不拦截（Excalidraw 默认）；只在按钮上 stopPropagation 打开预览。
  *
  * @param {object} env 依赖注入
@@ -105,14 +105,22 @@ function createHoverEntry(env) {
     if (env.newButton) {
       button = env.newButton();
     } else if (doc) {
+      // 默认：四角「全屏/展开」图标（非放大镜、非方案类文档图标）
       button = doc.createElement("div");
       button.className = "excalidraw-hover-entry-btn";
-      button.textContent = "⛶"; // 放大占位符；样式由 CSS/手测清单覆盖
+      button.innerHTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
+        'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M8 3H5a2 2 0 0 0-2 2v3"/>' +
+        '<path d="M21 8V5a2 2 0 0 0-2-2h-3"/>' +
+        '<path d="M3 16v3a2 2 0 0 0 2 2h3"/>' +
+        '<path d="M16 21h3a2 2 0 0 0 2-2v-3"/>' +
+        "</svg>";
       button.style.cssText =
         "position:fixed;z-index:2147483000;cursor:pointer;width:28px;height:28px;" +
         "display:flex;align-items:center;justify-content:center;" +
         "border-radius:6px;background:rgba(0,0,0,.72);color:#fff;user-select:none;" +
-        "font-size:16px;line-height:1;pointer-events:auto;box-shadow:0 2px 8px rgba(0,0,0,.35);";
+        "line-height:1;pointer-events:auto;box-shadow:0 2px 8px rgba(0,0,0,.35);";
       button.title = "查看大图";
     }
     if (button) {

@@ -1,12 +1,12 @@
 # Image Hover Lightbox · 图片悬停放大
 
 > Part of **[Otto OBplugins](https://github.com/otto-OBplugins)** · Excalidraw script series  
-> **版本 `0.1.0`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)  
+> **版本 `0.2.0`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)  
 > 安装目录：[excalidraw-scripts-catalog](https://github.com/otto-OBplugins/excalidraw-scripts-catalog)
 
 在 Obsidian Excalidraw 画布中：
 
-1. **悬停**图片元素 → 右上角出现放大镜按钮  
+1. **悬停**图片元素 → 右上角出现**全屏四角**按钮  
 2. **点击按钮**（不是点图片本体）→ 打开遮罩层大图  
 3. **点遮罩空白**或 **Esc** 关闭  
 
@@ -32,10 +32,14 @@ https://raw.githubusercontent.com/otto-OBplugins/excalidraw-scripts-catalog/main
 ```
 ````
 
-安装后：打开 Excalidraw 画布 → 运行脚本 **Image Hover Lightbox**（或「图片悬停放大」）一次。
+安装后任选其一启用：
+
+1. **自动加载（推荐）**：Excalidraw 设置 → **Startup Script** → 指向本脚本  
+2. **手动**：打开画布 → 运行 **Image Hover Lightbox** 一次  
 
 > 需要可访问 GitHub raw 的网络。脚本会把模块缓存到 vault：  
-> `Excalidraw/Module/otto-OBplugins/image-hover-lightbox/`
+> `Excalidraw/Module/otto-OBplugins/image-hover-lightbox/`  
+> 版本升级时会按 `VERSION` 自动刷新缓存模块。
 
 ---
 
@@ -43,7 +47,7 @@ https://raw.githubusercontent.com/otto-OBplugins/excalidraw-scripts-catalog/main
 
 1. 复制 `Module/*.js` 到 vault 的 `Excalidraw/Module/otto-OBplugins/image-hover-lightbox/`  
 2. 复制 `scripts/Image Hover Lightbox.md` + `.svg` 到 `Excalidraw/Scripts/`  
-3. 在画布中运行脚本一次  
+3. 配置 Startup Script，或在画布中运行脚本一次  
 
 ---
 

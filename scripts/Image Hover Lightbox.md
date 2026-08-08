@@ -1,15 +1,35 @@
 /*
 Image Hover Lightbox / 图片悬停放大
-version: 0.1.0
+version: 0.2.0
 repo: https://github.com/otto-OBplugins/excalidraw-image-hover-lightbox
-Hover an image → magnifier button → mask lightbox (click outside / Esc to close).
-Run once on any Excalidraw canvas to enable.
+Hover an image → fullscreen-corner button → mask lightbox (click outside / Esc to close).
+
+Enable:
+1. Recommended: Excalidraw Settings → Startup Script → this file (auto on open)
+2. Or run once on any Excalidraw canvas (session hooks via onFileOpenHook)
 ```javascript
 */
 (async function () {
   "use strict";
 
-  // —— 模块来源：优先 vault 缓存；否则从本仓库 raw 拉取并缓存 ——
+  const SCRIPT_VERSION = "0.2.0";
+
+  // 幂等：已启用则只提醒，避免重复监听
+  if (window.__exlReady && window.__exlEntry) {
+    try {
+      window.__exlEntry.mount();
+      window.__exlEntry.update();
+    } catch (e) {
+      /* ignore */
+    }
+    new Notice(
+      "Image Hover Lightbox 已在运行。悬停图片 → 点右上角全屏图标。",
+      3000
+    );
+    return;
+  }
+
+  // —— 模块来源：优先 vault 缓存；版本变化时从本仓库 raw 刷新 ——
   // 勿在脚本内 `const ea = ...`（会 TDZ 遮蔽脚本引擎注入的 ea）
   const REPO_RAW =
     "https://raw.githubusercontent.com/otto-OBplugins/excalidraw-image-hover-lightbox/main";
@@ -26,7 +46,9 @@ Run once on any Excalidraw canvas to enable.
       return window.ExcalidrawAutomate;
     }
     if (typeof ExcalidrawAutomate !== "undefined") return ExcalidrawAutomate;
-    throw new Error("ExcalidrawAutomate not found — run inside an Excalidraw view");
+    throw new Error(
+      "ExcalidrawAutomate not found — run inside Excalidraw, or set as Startup Script"
+    );
   };
 
   const resolveActiveEA = () => {
@@ -53,10 +75,7 @@ Run once on any Excalidraw canvas to enable.
     }
   };
 
-  const loadText = async (vaultPath, rawUrl) => {
-    if (await app.vault.adapter.exists(vaultPath)) {
-      return app.vault.adapter.read(vaultPath);
-    }
+  const fetchRemoteText = async (rawUrl) => {
     let text = null;
     try {
       const activeEA = resolveActiveEA();
@@ -73,6 +92,14 @@ Run once on any Excalidraw canvas to enable.
       text = await res.text();
     }
     if (text == null) throw new Error("无法加载模块: " + rawUrl);
+    return text;
+  };
+
+  const loadText = async (vaultPath, rawUrl, force) => {
+    if (!force && (await app.vault.adapter.exists(vaultPath))) {
+      return app.vault.adapter.read(vaultPath);
+    }
+    const text = await fetchRemoteText(rawUrl);
     await ensureFolder(vaultPath.replace(/\/[^/]+$/, ""));
     try {
       await app.vault.adapter.write(vaultPath, text);
@@ -103,6 +130,16 @@ Run once on any Excalidraw canvas to enable.
     return result;
   };
 
+  /** 标准「全屏/展开」四角图标（Lucide maximize 风格） */
+  const FULLSCREEN_ICON_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M8 3H5a2 2 0 0 0-2 2v3"/>' +
+    '<path d="M21 8V5a2 2 0 0 0-2-2h-3"/>' +
+    '<path d="M3 16v3a2 2 0 0 0 2 2h3"/>' +
+    '<path d="M16 21h3a2 2 0 0 0 2-2v-3"/>' +
+    "</svg>";
+
   let lastClient = null;
   const onPointer = (e) => {
     lastClient = { x: e.clientX, y: e.clientY };
@@ -116,12 +153,29 @@ Run once on any Excalidraw canvas to enable.
   };
 
   try {
+    const versionPath = CACHE_DIR + "/.version";
+    let forceRefresh = true;
+    try {
+      if (await app.vault.adapter.exists(versionPath)) {
+        const cachedVer = (await app.vault.adapter.read(versionPath)).trim();
+        forceRefresh = cachedVer !== SCRIPT_VERSION;
+      }
+    } catch (e) {
+      forceRefresh = true;
+    }
+
     const contents = {};
     for (const key of Object.keys(MOD_FILES)) {
       const file = MOD_FILES[key];
       const vaultPath = CACHE_DIR + "/" + file;
       const rawUrl = REPO_RAW + "/Module/" + file;
-      contents[key] = await loadText(vaultPath, rawUrl);
+      contents[key] = await loadText(vaultPath, rawUrl, forceRefresh);
+    }
+    try {
+      await ensureFolder(CACHE_DIR);
+      await app.vault.adapter.write(versionPath, SCRIPT_VERSION + "\n");
+    } catch (e) {
+      /* optional */
     }
 
     const geometryMod = await loadCommonJS("geometry.js", contents.geometry);
@@ -184,14 +238,9 @@ Run once on any Excalidraw canvas to enable.
     const newButton = () => {
       const btn = document.createElement("div");
       btn.className = "excalidraw-hover-entry-btn";
-      btn.title = "View large image";
-      btn.innerHTML =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">' +
-        '<circle cx="10.5" cy="10.5" r="6.5"/>' +
-        '<line x1="15.5" y1="15.5" x2="21" y2="21"/>' +
-        '<line x1="10.5" y1="8" x2="10.5" y2="13"/>' +
-        '<line x1="8" y1="10.5" x2="13" y2="10.5"/>' +
-        "</svg>";
+      btn.title = "查看大图";
+      btn.setAttribute("aria-label", "查看大图");
+      btn.innerHTML = FULLSCREEN_ICON_SVG;
       btn.style.cssText =
         "position:fixed;z-index:2147483000;cursor:pointer;width:30px;height:30px;" +
         "display:flex;align-items:center;justify-content:center;" +
@@ -208,8 +257,18 @@ Run once on any Excalidraw canvas to enable.
         binding.openPreview(hitEl, { lightbox: getLightbox(), notify: notify }),
       newButton: newButton,
     });
-    entry.mount();
-    entry.update();
+
+    const remountEntry = () => {
+      try {
+        if (typeof activeEA.setView === "function") activeEA.setView("active");
+      } catch (e) {
+        /* ignore */
+      }
+      entry.mount();
+      entry.update();
+    };
+
+    remountEntry();
     window.__exlEntry = entry;
 
     const timer = setInterval(() => {
@@ -231,6 +290,7 @@ Run once on any Excalidraw canvas to enable.
         /* ignore */
       }
       window.__exlEntry = null;
+      window.__exlReady = false;
     };
 
     const prevOpen = activeEA.onFileOpenHook;
@@ -241,13 +301,37 @@ Run once on any Excalidraw canvas to enable.
         /* ignore */
       }
       try {
-        if (typeof activeEA.setView === "function") activeEA.setView("active");
-        entry.mount();
-        entry.update();
+        if (data && data.ea && typeof data.ea.setView === "function") {
+          data.ea.setView(data.view || "active");
+        }
+        remountEntry();
       } catch (e) {
-        console.error(e);
+        console.error("[Image Hover Lightbox] onFileOpenHook", e);
       }
     };
+
+    const prevUnload = activeEA.onViewUnloadHook;
+    activeEA.onViewUnloadHook = (view) => {
+      try {
+        if (typeof prevUnload === "function") prevUnload(view);
+      } catch (e) {
+        /* ignore */
+      }
+      try {
+        entry.unmount();
+      } catch (e) {
+        console.error("[Image Hover Lightbox] onViewUnloadHook", e);
+      }
+    };
+
+    // 工作区恢复已打开标签时 onFileOpenHook 可能不触发
+    setTimeout(() => {
+      try {
+        remountEntry();
+      } catch (e) {
+        /* ignore */
+      }
+    }, 800);
 
     let n = 0;
     try {
@@ -267,16 +351,25 @@ Run once on any Excalidraw canvas to enable.
           "," +
           Math.round(s.pointer.y) +
           ") zoom=" +
-          s.view.zoom
+          s.view.zoom +
+          " v=" +
+          SCRIPT_VERSION
       );
       return s;
     };
 
-    notify(
-      "Image Hover Lightbox 已启用（" +
-        n +
-        " 张图）。悬停图片 → 点右上角放大镜。诊断: __exlDebug()"
-    );
+    window.__exlReady = true;
+    const msg =
+      n >= 0
+        ? "Image Hover Lightbox v" +
+          SCRIPT_VERSION +
+          " 已启用（" +
+          n +
+          " 张图）。悬停 → 全屏图标。诊断: __exlDebug()"
+        : "Image Hover Lightbox v" +
+          SCRIPT_VERSION +
+          " 已启用。打开画布后悬停 → 全屏图标。";
+    notify(msg);
   } catch (error) {
     console.error("[Image Hover Lightbox]", error);
     new Notice("启用失败: " + (error && error.message));

@@ -3,6 +3,21 @@
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。  
 **每个脚本仓库独立版本**，与系列目录仓无关。
 
+## [0.2.0] - 2026-08-09
+
+### Changed
+
+- 悬停入口图标改为**全屏四角**（maximize 风格），不再使用放大镜
+- 工具栏 `.svg` 同步为全屏语义
+- 支持 Excalidraw **Startup Script** 自动加载；补充 `onViewUnloadHook` 与延迟 remount
+- 脚本幂等：重复运行不重复挂监听
+- 模块缓存按脚本版本刷新（vault 内 `.version` 与 `0.2.0` 不一致时重新拉取 Module）
+
+### Notes
+
+- 升级：重新 `excalidraw-script-install` 或覆盖脚本后，再运行一次（或靠 Startup Script）
+- 推荐：Excalidraw 设置 → Startup Script → 指向本脚本
+
 ## [0.1.0] - 2026-08-09
 
 ### Added
