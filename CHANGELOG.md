@@ -3,6 +3,14 @@
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。  
 **每个脚本仓库独立版本**，与系列目录仓无关。
 
+## [0.2.1] - 2026-08-09
+
+### Fixed
+
+- 脚本作为 **Startup Script** 运行时（插件加载时无活动 Excalidraw 视图），先注册 `onFileOpenHook` 再延迟 setup，打开画布后自动启用
+- `onFileOpenHook` 回调内重建 binding + entry，切视图不失效
+- 启动时若 EA 不可用，不再直接失败，而是注册钩子等待首次文件打开
+
 ## [0.2.0] - 2026-08-09
 
 ### Changed
