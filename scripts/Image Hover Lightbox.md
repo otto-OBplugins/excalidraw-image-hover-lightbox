@@ -1,5 +1,7 @@
 /*
 Image Hover Lightbox / 图片悬停放大
+version: 0.1.0
+repo: https://github.com/otto-OBplugins/excalidraw-image-hover-lightbox
 Hover an image → magnifier button → mask lightbox (click outside / Esc to close).
 Run once on any Excalidraw canvas to enable.
 ```javascript
