@@ -3,6 +3,14 @@
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。  
 **每个脚本仓库独立版本**，与系列目录仓无关。
 
+## [1.0.3] - 2026-08-09
+
+### Fixed
+
+- 修复 Obsidian 重启后工作区恢复 Excalidraw 标签但 `onFileOpenHook` 未触发时，入口未挂载的问题。
+- Startup Script 会调用 `ExcalidrawAutomate.setView("active")` 恢复当前活动绘图，并仅对已加载视图挂载。
+- 没有活动绘图时不伪造视图，也不会误挂载入口。
+
 ## [1.0.2] - 2026-08-09
 
 ### Fixed

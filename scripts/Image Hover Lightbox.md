@@ -1,6 +1,6 @@
 /*
 Image Hover Lightbox / 图片悬停放大
-version: 1.0.2
+version: 1.0.3
 repo: https://github.com/otto-OBplugins/excalidraw-image-hover-lightbox
 Hover an image -> fullscreen-corner button -> mask lightbox (click outside / Esc to close).
 
@@ -13,7 +13,7 @@ Enable:
   "use strict";
 
   const SCRIPT_NAME = "Image Hover Lightbox";
-  const SCRIPT_VERSION = "1.0.2";
+  const SCRIPT_VERSION = "1.0.3";
   const REPO_RAW =
     "https://raw.githubusercontent.com/otto-OBplugins/excalidraw-image-hover-lightbox/main";
   const CACHE_DIR = "Excalidraw/Module/otto-OBplugins/image-hover-lightbox";
@@ -365,9 +365,15 @@ Enable:
     const mountActiveView = () => {
       if (lifecycle.getViewCount() > 0) return true;
       const activeEA = getHookHost() || host;
-      if (!activeEA || !activeEA.targetView) return false;
+      if (!activeEA) return false;
+      if (!activeEA.targetView && typeof activeEA.setView === "function") {
+        try { activeEA.setView("active"); } catch (error) { /* startup recovery retries */ }
+      }
+      const activeView = activeEA.targetView;
+      if (!activeView ||
+          (typeof activeView._loaded !== "undefined" && !activeView._loaded)) return false;
       try {
-        lifecycle.mountView({ ea: activeEA, view: activeEA.targetView });
+        lifecycle.mountView({ ea: activeEA, view: activeView });
         return lifecycle.getViewCount() > 0;
       } catch (error) {
         return false;
