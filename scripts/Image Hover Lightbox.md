@@ -1,6 +1,6 @@
 /*
 Image Hover Lightbox / 图片悬停放大
-version: 0.2.2
+version: 0.2.3
 repo: https://github.com/otto-OBplugins/excalidraw-image-hover-lightbox
 Hover an image → fullscreen-corner button → mask lightbox (click outside / Esc to close).
 
@@ -12,7 +12,7 @@ Enable:
 (async function () {
   "use strict";
 
-  const SCRIPT_VERSION = "0.2.2";
+  const SCRIPT_VERSION = "0.2.3";
 
   // 幂等：已启用则只提醒
   if (window.__exlReady && window.__exlEntry) {
@@ -66,24 +66,15 @@ Enable:
     return text;
   };
 
-  const loadText = async (vaultPath, rawUrl, force) => {
-    // 非强制时优先用缓存
-    if (!force && (await app.vault.adapter.exists(vaultPath)))
+  const loadText = async (vaultPath, rawUrl) => {
+    // 有缓存就直接用，零网络依赖
+    if (await app.vault.adapter.exists(vaultPath))
       return app.vault.adapter.read(vaultPath);
-    // 强制刷新时：先试远程，失败则回退缓存
-    try {
-      const text = await fetchRemoteText(rawUrl);
-      await ensureFolder(vaultPath.replace(/\/[^/]+$/, ""));
-      try { await app.vault.adapter.write(vaultPath, text); } catch (e) {}
-      return text;
-    } catch (remoteErr) {
-      // 远程失败：如果有缓存就用缓存，避免功能直接崩
-      if (await app.vault.adapter.exists(vaultPath)) {
-        console.warn("[Image Hover Lightbox] 远程拉取失败，回退缓存:", vaultPath, remoteErr);
-        return app.vault.adapter.read(vaultPath);
-      }
-      throw remoteErr; // 没缓存也没远程，真的没救了
-    }
+    // 没缓存才去远程拉
+    const text = await fetchRemoteText(rawUrl);
+    await ensureFolder(vaultPath.replace(/\/[^/]+$/, ""));
+    try { await app.vault.adapter.write(vaultPath, text); } catch (e) {}
+    return text;
   };
 
   const moduleCache = Object.create(null);
