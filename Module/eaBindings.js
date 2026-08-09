@@ -59,10 +59,15 @@ function mimeFor(name) {
 }
 
 function resolveImageSource(ea, el) {
-  if (typeof ea.getViewFileForImageElement !== "function") {
+  if (!ea || typeof ea.getViewFileForImageElement !== "function") {
     return { ok: false, reason: "ea 缺少 getViewFileForImageElement" };
   }
-  const file = ea.getViewFileForImageElement(el);
+  let file;
+  try {
+    file = ea.getViewFileForImageElement(el);
+  } catch (error) {
+    return { ok: false, reason: "解析图片对应文件失败：" + (error && error.message) };
+  }
   if (!file) return { ok: false, reason: "无法解析图片对应的文件" };
   const mime = mimeFor(file.name);
   if (!mime) {
@@ -76,10 +81,13 @@ function resolveImageSource(ea, el) {
   return { ok: true, file: file, mime: mime, name: file.name };
 }
 
-function findCanvasContainer() {
+function findCanvasContainer(root) {
+  const scope = root || (typeof document !== "undefined" ? document : null);
   const trySel = (sel) => {
     try {
-      return document.querySelector(sel);
+      return scope && typeof scope.querySelector === "function"
+        ? scope.querySelector(sel)
+        : null;
     } catch (e) {
       return null;
     }
@@ -99,11 +107,13 @@ function findCanvasContainer() {
 function createEaBindings(ea, deps) {
   deps = deps || {};
 
-  function readSnapshot() {
-    try {
-      if (typeof ea.setView === "function") ea.setView("active");
-    } catch (e) { /* ignore */ }
+  const readBinary =
+    typeof deps.readBinary === "function"
+      ? deps.readBinary
+      : (file) => app.vault.readBinary(file);
+  const urlApi = deps.urlApi || URL;
 
+  function readSnapshot() {
     const api = typeof ea.getExcalidrawAPI === "function" ? ea.getExcalidrawAPI() : null;
     const view = appStateOf(api);
 
@@ -114,12 +124,15 @@ function createEaBindings(ea, deps) {
       width: view.width,
       height: view.height,
     };
-    // 若 offset/尺寸全 0，回退 DOM rect
-    if (!container.left && !container.top && !container.width) {
+    // 若 offset/尺寸不完整，回退 DOM rect。宽度有效但高度尚未就绪时也要回退。
+    if (!container.width || !container.height) {
       let el = null;
       if (typeof deps.canvasEl === "function") el = deps.canvasEl();
       else if (deps.canvasEl) el = deps.canvasEl;
-      if (!el) el = findCanvasContainer();
+      if (!el) {
+        const root = typeof deps.canvasRoot === "function" ? deps.canvasRoot() : deps.canvasRoot;
+        el = findCanvasContainer(root);
+      }
       const r = canvasRectOf(el);
       if (r) {
         container = r;
@@ -132,10 +145,17 @@ function createEaBindings(ea, deps) {
 
     // 指针：优先真实鼠标 client 坐标换算（不依赖 EA 内部 lastPointer）
     let pointer = { x: 0, y: 0 };
+    let pointerInside = null;
     const client =
       typeof deps.getClientPointer === "function" ? deps.getClientPointer() : null;
     if (client && typeof client.x === "number") {
       const zoom = view.zoom || 1;
+      if (container.width > 0 && container.height > 0) {
+        pointerInside = client.x >= container.left &&
+          client.x <= container.left + container.width &&
+          client.y >= container.top &&
+          client.y <= container.top + container.height;
+      }
       pointer = {
         x: (client.x - view.offsetLeft) / zoom - view.scrollX,
         y: (client.y - view.offsetTop) / zoom - view.scrollY,
@@ -158,6 +178,7 @@ function createEaBindings(ea, deps) {
       images: images,
       view: view,
       container: container,
+      pointerInside: pointerInside,
     };
   }
 
@@ -168,20 +189,35 @@ function createEaBindings(ea, deps) {
       notify(src.reason);
       return;
     }
+    let release = null;
     try {
-      const data = await app.vault.readBinary(src.file);
+      const data = await readBinary(src.file);
       const blob = new Blob([data], { type: src.mime });
-      const url = URL.createObjectURL(blob);
-      if (ctx && ctx.lightbox) {
-        ctx.lightbox.open({
-          raw: hitEl,
-          url: url,
-          file: src.file,
-          name: src.name,
-          el: { name: src.name },
-        });
+      const url = urlApi.createObjectURL(blob);
+      let released = false;
+      release = () => {
+        if (released) return;
+        released = true;
+        urlApi.revokeObjectURL(url);
+      };
+      if (ctx && typeof ctx.isActive === "function" && !ctx.isActive()) {
+        release();
+        return;
       }
+      if (!ctx || !ctx.lightbox) {
+        release();
+        return;
+      }
+      ctx.lightbox.open({
+        raw: hitEl,
+        url: url,
+        source: { url: url, release: release },
+        file: src.file,
+        name: src.name,
+        el: { name: src.name },
+      });
     } catch (e) {
+      if (release) release();
       notify("大图资源解析失败：" + (e && e.message));
     }
   }

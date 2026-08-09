@@ -1,32 +1,28 @@
 /*
 Image Hover Lightbox / 图片悬停放大
-version: 0.2.3
+version: 1.0.1
 repo: https://github.com/otto-OBplugins/excalidraw-image-hover-lightbox
-Hover an image → fullscreen-corner button → mask lightbox (click outside / Esc to close).
+Hover an image -> fullscreen-corner button -> mask lightbox (click outside / Esc to close).
 
 Enable:
-1. Recommended: Excalidraw Settings → Startup Script → this file (auto on open)
+1. Recommended: Excalidraw Settings -> Startup Script -> this file (auto on open)
 2. Or run once on any Excalidraw canvas (session hooks via onFileOpenHook)
 ```javascript
 */
 (async function () {
   "use strict";
 
-  const SCRIPT_VERSION = "0.2.3";
-
-  // 幂等：已启用则只提醒
-  if (window.__exlReady && window.__exlEntry) {
-    try { window.__exlEntry.mount(); window.__exlEntry.update(); } catch (e) {}
-    new Notice("Image Hover Lightbox 已在运行（v" + SCRIPT_VERSION + "）。", 3000);
-    return;
-  }
-
+  const SCRIPT_NAME = "Image Hover Lightbox";
+  const SCRIPT_VERSION = "1.0.1";
   const REPO_RAW =
     "https://raw.githubusercontent.com/otto-OBplugins/excalidraw-image-hover-lightbox/main";
   const CACHE_DIR = "Excalidraw/Module/otto-OBplugins/image-hover-lightbox";
   const MOD_FILES = {
-    geometry: "geometry.js", lightbox: "lightbox.js",
-    hoverEntry: "hoverEntry.js", eaBindings: "eaBindings.js",
+    geometry: "geometry.js",
+    lightbox: "lightbox.js",
+    hoverEntry: "hoverEntry.js",
+    eaBindings: "eaBindings.js",
+    globalMount: "globalMount.js",
   };
 
   const FULLSCREEN_ICON_SVG =
@@ -38,261 +34,313 @@ Enable:
     '<path d="M16 21h3a2 2 0 0 0 2-2v-3"/>' +
     "</svg>";
 
-  // —— 工具函数 ——
-  const ensureFolder = async (p) => {
-    const parts = p.split("/").filter(Boolean); let cur = "";
-    for (const q of parts) {
-      cur = cur ? cur + "/" + q : q;
-      if (!(await app.vault.adapter.exists(cur)))
-        try { await app.vault.createFolder(cur); } catch (e) {}
-    }
-  };
+  // 重复运行时先清理上一轮，避免旧 hooks、计时器和按钮叠加。
+  if (window.__exlCleanup) {
+    try { window.__exlCleanup(); } catch (error) { console.warn("[" + SCRIPT_NAME + "] cleanup", error); }
+  }
+  window.__exlReady = false;
 
-  const fetchRemoteText = async (rawUrl) => {
-    let text = null;
-    try {
-      const ea = window.ExcalidrawAutomate;
-      if (ea && ea.obsidian && ea.obsidian.requestUrl) {
-        const res = await ea.obsidian.requestUrl({ url: rawUrl });
-        text = res.text;
+  const notify = (message, duration) => new Notice(String(message), duration == null ? 5000 : duration);
+
+  const ensureFolder = async (path) => {
+    const parts = String(path || "").split("/").filter(Boolean);
+    let current = "";
+    for (const part of parts) {
+      current = current ? current + "/" + part : part;
+      if (!(await app.vault.adapter.exists(current))) {
+        try { await app.vault.createFolder(current); } catch (error) { /* 并发创建时可忽略 */ }
       }
-    } catch (e) {}
-    if (text == null && typeof fetch === "function") {
-      const res = await fetch(rawUrl);
-      if (!res.ok) throw new Error("fetch failed " + rawUrl + " " + res.status);
-      text = await res.text();
     }
-    if (text == null) throw new Error("无法加载模块: " + rawUrl);
+  };
+
+  const validateModuleText = (text, url) => {
+    if (typeof text !== "string" || !text.trim()) {
+      throw new Error("远程模块为空：" + url);
+    }
+    if (/^\s*<(?:!doctype\s+html|html\b)/i.test(text) || !text.includes("module.exports")) {
+      throw new Error("远程模块内容无效：" + url);
+    }
     return text;
   };
 
-  const loadText = async (vaultPath, rawUrl) => {
-    // 有缓存就直接用，零网络依赖
-    if (await app.vault.adapter.exists(vaultPath))
-      return app.vault.adapter.read(vaultPath);
-    // 没缓存才去远程拉
-    const text = await fetchRemoteText(rawUrl);
-    await ensureFolder(vaultPath.replace(/\/[^/]+$/, ""));
-    try { await app.vault.adapter.write(vaultPath, text); } catch (e) {}
-    return text;
+  const fetchRemoteText = async (url) => {
+    let lastError = null;
+    try {
+      const eaHost = window.ExcalidrawAutomate;
+      if (eaHost && eaHost.obsidian && typeof eaHost.obsidian.requestUrl === "function") {
+        const response = await eaHost.obsidian.requestUrl({ url: url });
+        if (response && response.status != null &&
+            (response.status < 200 || response.status >= 300)) {
+          throw new Error("requestUrl failed " + response.status);
+        }
+        return validateModuleText(response && response.text, url);
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    if (typeof fetch === "function") {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("fetch failed " + response.status);
+        return validateModuleText(await response.text(), url);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError || new Error("无法加载模块：" + url);
+  };
+
+  const loadText = async (vaultPath, rawUrl, forceRefresh) => {
+    let cachedText = null;
+    if (await app.vault.adapter.exists(vaultPath)) {
+      try {
+        cachedText = validateModuleText(await app.vault.adapter.read(vaultPath), vaultPath);
+      } catch (error) {
+        console.warn("[" + SCRIPT_NAME + "] 缓存模块无效，将尝试远程：", vaultPath, error);
+      }
+    }
+    if (!forceRefresh && cachedText != null) {
+      return { text: cachedText, fromRemote: false };
+    }
+    try {
+      const text = await fetchRemoteText(rawUrl);
+      await ensureFolder(vaultPath.replace(/\/[^/]+$/, ""));
+      try { await app.vault.adapter.write(vaultPath, text); } catch (error) { /* 缓存写入失败不阻塞本次运行 */ }
+      return { text: text, fromRemote: true };
+    } catch (remoteError) {
+      if (cachedText != null) {
+        console.warn("[" + SCRIPT_NAME + "] 远程拉取失败，回退缓存：", vaultPath, remoteError);
+        return { text: cachedText, fromRemote: false };
+      }
+      throw remoteError;
+    }
+  };
+
+  const getHookHost = () => {
+    if (typeof window !== "undefined" && window.ExcalidrawAutomate) return window.ExcalidrawAutomate;
+    try {
+      if (typeof ExcalidrawAutomate !== "undefined") return ExcalidrawAutomate;
+    } catch (error) { /* 启动脚本可能没有该全局变量 */ }
+    try {
+      if (typeof ea !== "undefined" && ea) return ea;
+    } catch (error) { /* 脚本引擎可能没有活动 ea */ }
+    return null;
+  };
+
+  const viewMember = (data, name) => {
+    const candidates = [
+      data && data[name],
+      data && data.view && typeof data.view === "object" && data.view[name],
+      data && data.leaf && data.leaf.view && data.leaf.view[name],
+    ];
+    return candidates.find((value) => value != null) || null;
   };
 
   const moduleCache = Object.create(null);
-  const loadCommonJS = async (name, content, extraRequire) => {
+  const loadCommonJS = (name, content, extraRequire) => {
     if (moduleCache[name]) return moduleCache[name];
-    const exportsObj = {}, moduleObj = { exports: exportsObj };
+    const exportsObject = {};
+    const moduleObject = { exports: exportsObject };
     const requireFn = (id) => {
       if (extraRequire && extraRequire[id]) return extraRequire[id];
       if (moduleCache[id]) return moduleCache[id];
-      throw new Error("cannot require: " + id);
+      throw new Error("无法 require：" + id);
     };
-    new Function("exports","module","require", content+"\n;return module.exports;")(exportsObj, moduleObj, requireFn);
-    moduleCache[name] = moduleObj.exports;
-    return moduleObj.exports;
+    const factory = new Function("exports", "module", "require", content + "\n;return module.exports;");
+    const result = factory(exportsObject, moduleObject, requireFn);
+    moduleCache[name] = result;
+    return result;
   };
 
-  const notify = (m) => new Notice(String(m), 5000);
-
-  // —— 1) 加载模块（不依赖活动视图）——
-  let mods = null;
-  try {
+  const loadModules = async () => {
     const versionPath = CACHE_DIR + "/.version";
-    let forceRefresh = true;
+    let cachedVersion = null;
     try {
       if (await app.vault.adapter.exists(versionPath)) {
-        const cachedVer = (await app.vault.adapter.read(versionPath)).trim();
-        forceRefresh = cachedVer !== SCRIPT_VERSION;
+        cachedVersion = (await app.vault.adapter.read(versionPath)).trim();
       }
-    } catch (e) {}
-
+    } catch (error) { /* 缓存版本不可读时按需刷新 */ }
+    const forceRefresh = cachedVersion !== SCRIPT_VERSION;
     const contents = {};
+    let usedStaleCache = false;
     for (const key of Object.keys(MOD_FILES)) {
       const file = MOD_FILES[key];
-      contents[key] = await loadText(CACHE_DIR + "/" + file, REPO_RAW + "/Module/" + file, forceRefresh);
+      const loaded = await loadText(
+        CACHE_DIR + "/" + file,
+        REPO_RAW + "/Module/" + file,
+        forceRefresh
+      );
+      contents[key] = loaded.text;
+      if (forceRefresh && !loaded.fromRemote) usedStaleCache = true;
     }
-    try { await ensureFolder(CACHE_DIR); await app.vault.adapter.write(versionPath, SCRIPT_VERSION + "\n"); } catch (e) {}
+    if (!usedStaleCache) {
+      try {
+        await ensureFolder(CACHE_DIR);
+        await app.vault.adapter.write(versionPath, SCRIPT_VERSION + "\n");
+      } catch (error) { /* 版本标记写入失败不阻塞本次运行 */ }
+    }
 
-    const geo = await loadCommonJS("geometry.js", contents.geometry);
-    moduleCache["./geometry.js"] = geo; moduleCache["geometry.js"] = geo;
-    const lightboxMod = await loadCommonJS("lightbox.js", contents.lightbox);
-    const hoverMod = await loadCommonJS("hoverEntry.js", contents.hoverEntry, { "./geometry.js": geo, "geometry.js": geo });
-    const bindMod = await loadCommonJS("eaBindings.js", contents.eaBindings);
-    mods = {
-      buildLightbox: lightboxMod.buildLightbox,
-      createHoverEntry: hoverMod.createHoverEntry,
-      createEaBindings: bindMod.createEaBindings,
-      filterImageElements: bindMod.filterImageElements,
+    const geometry = loadCommonJS("geometry.js", contents.geometry);
+    const lightbox = loadCommonJS("lightbox.js", contents.lightbox);
+    const hoverEntry = loadCommonJS("hoverEntry.js", contents.hoverEntry, {
+      "./geometry.js": geometry,
+      "geometry.js": geometry,
+    });
+    const eaBindings = loadCommonJS("eaBindings.js", contents.eaBindings);
+    const globalMount = loadCommonJS("globalMount.js", contents.globalMount);
+    return { lightbox, hoverEntry, eaBindings, globalMount };
+  };
+
+  const viewKeyOf = (data) => {
+    if (data && data.leaf && data.leaf.id != null) return data.leaf.id;
+    if (data && data.leaf != null) return data.leaf;
+    if (data && data.viewId != null) return data.viewId;
+    if (data && data.view && typeof data.view === "object") return data.view;
+    if (data && typeof data.view === "string" && data.view !== "active") return data.view;
+    if (data && data.ea && data.ea.targetView && typeof data.ea.targetView === "object") {
+      return data.ea.targetView;
+    }
+    if (data && data.ea != null) return data.ea;
+    return data;
+  };
+
+  const setViewForData = (eaForView, data) => {
+    if (!eaForView || typeof eaForView.setView !== "function") return;
+    const target = data && data.view != null ? data.view : "active";
+    eaForView.setView(target);
+  };
+
+  try {
+    const mods = await loadModules();
+    const host = getHookHost();
+    if (!host) {
+      notify("「" + SCRIPT_NAME + "」找不到 ExcalidrawAutomate，未注册全局挂载。", 7000);
+      return;
+    }
+
+    let sharedLightbox = null;
+    let previewKey = null;
+    let mount = null;
+
+    const makeButton = () => {
+      const button = document.createElement("div");
+      button.className = "excalidraw-hover-entry-btn";
+      button.title = "查看大图";
+      button.setAttribute("aria-label", "查看大图");
+      button.innerHTML = FULLSCREEN_ICON_SVG;
+      button.style.cssText =
+        "position:fixed;z-index:2147483000;cursor:pointer;width:30px;height:30px;" +
+        "display:flex;align-items:center;justify-content:center;border-radius:8px;" +
+        "background:rgba(20,20,20,.78);color:#fff;user-select:none;pointer-events:auto;" +
+        "box-shadow:0 2px 10px rgba(0,0,0,.4);";
+      return button;
     };
-  } catch (e) {
-    console.error("[Image Hover Lightbox] 模块加载失败", e);
-    new Notice("Image Hover Lightbox 模块加载失败: " + (e && e.message));
-    return;
-  }
 
-  // —— 2) 全局状态（延迟到有视图时才真正 mount）——
-  let lastClient = null;
-  let activeEA = null;
-  let binding = null;
-  let entry = null;
-  let sharedLightbox = null;
-  let timer = null;
-  let setupDone = false;
-
-  const onPointer = (e) => {
-    lastClient = { x: e.clientX, y: e.clientY };
-    if (entry && typeof entry.update === "function")
-      try { entry.update(); } catch (err) {}
-  };
-
-  const getLightbox = () =>
-    sharedLightbox || (sharedLightbox = mods.buildLightbox({
-      loadImage: async (img, src) => {
-        img.src = src.url;
-        await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("image load failed")); });
-      },
-      onError: (e) => notify("Lightbox error: " + (e && e.message)),
-    }));
-
-  const newButton = () => {
-    const btn = document.createElement("div");
-    btn.className = "excalidraw-hover-entry-btn";
-    btn.title = "查看大图";
-    btn.setAttribute("aria-label", "查看大图");
-    btn.innerHTML = FULLSCREEN_ICON_SVG;
-    btn.style.cssText =
-      "position:fixed;z-index:2147483000;cursor:pointer;width:30px;height:30px;" +
-      "display:flex;align-items:center;justify-content:center;" +
-      "border-radius:8px;background:rgba(20,20,20,.78);color:#fff;" +
-      "user-select:none;pointer-events:auto;box-shadow:0 2px 10px rgba(0,0,0,.4);";
-    return btn;
-  };
-
-  /** 用当前活动 EA 创建 binding + entry；无视图时安全跳过。 */
-  const setupFromView = () => {
-    if (setupDone) { try { entry.mount(); entry.update(); } catch (e) {} return; }
-
-    // 获取 EA
-    try {
-      if (typeof ea !== "undefined" && ea) activeEA = ea;
-    } catch (e) {}
-    if (!activeEA && typeof window !== "undefined" && window.ExcalidrawAutomate)
-      activeEA = window.ExcalidrawAutomate;
-    if (!activeEA) return false; // EA 还没准备好
-
-    // 绑定视图（无视图会抛，安全跳过）
-    try { activeEA.setView("active"); } catch (e) { return false; }
-    try { if (typeof activeEA.registerThisAsViewEA === "function") activeEA.registerThisAsViewEA(); } catch (e) {}
-
-    // 创建 binding + entry
-    try {
-      binding = mods.createEaBindings(activeEA, { getClientPointer: () => lastClient });
-      entry = mods.createHoverEntry({
-        readSnapshot: () => binding.readSnapshot(),
-        isPreviewOpen: () => !!(sharedLightbox && sharedLightbox.isOpen()),
-        openPreview: (hitEl) => binding.openPreview(hitEl, { lightbox: getLightbox(), notify }),
-        newButton: newButton,
+    const getLightbox = () => {
+      if (sharedLightbox) return sharedLightbox;
+      sharedLightbox = mods.lightbox.buildLightbox({
+        loadImage: async (imageElement, source) => {
+          await new Promise((resolve, reject) => {
+            imageElement.onload = resolve;
+            imageElement.onerror = () => reject(new Error("图片加载失败"));
+            imageElement.src = source.url;
+          });
+        },
+        onError: (error) => notify("大图失败：" + (error && error.message)),
       });
-      entry.mount();
-      entry.update();
-      window.__exlEntry = entry;
-      setupDone = true;
+      return sharedLightbox;
+    };
 
-      // 定时刷新
-      if (timer) clearInterval(timer);
-      timer = setInterval(() => { try { entry.update(); } catch (e) {} }, 250);
-
-      // 指针监听
-      document.addEventListener("pointermove", onPointer, true);
-      document.addEventListener("mousemove", onPointer, true);
-      document.addEventListener("pointerdown", onPointer, true);
-
-      return true;
-    } catch (e) {
-      console.warn("[Image Hover Lightbox] setupFromView failed", e);
-      return false;
-    }
-  };
-
-  /** 卸载 entry（不拆钩子）。 */
-  const teardownEntry = () => {
-    if (timer) { clearInterval(timer); timer = null; }
-    document.removeEventListener("pointermove", onPointer, true);
-    document.removeEventListener("mousemove", onPointer, true);
-    document.removeEventListener("pointerdown", onPointer, true);
-    if (entry) { try { entry.unmount(); } catch (e) {} }
-    window.__exlEntry = null;
-    setupDone = false;
-  };
-
-  // 全局清理
-  if (window.__exlCleanup) { try { window.__exlCleanup(); } catch (e) {} }
-  window.__exlCleanup = () => {
-    teardownEntry();
-    window.__exlReady = false;
-  };
-
-  // —— 3) 注册钩子（不需要活动视图）——
-  // 必须在 setupFromView 之前注册，确保即使启动时无视图，
-  // 用户打开第一个 Excalidraw 文件时钩子能触发
-  {
-    const ea0 = (typeof window !== "undefined" && window.ExcalidrawAutomate) ? window.ExcalidrawAutomate : null;
-    if (ea0) {
-      const prevOpen = ea0.onFileOpenHook;
-      ea0.onFileOpenHook = async (data) => {
-        try { if (typeof prevOpen === "function") await prevOpen(data); } catch (e) {}
-        try {
-          if (data && data.ea && typeof data.ea.setView === "function")
-            data.ea.setView(data.view || "active");
-          // 每次打开文件都重新 setup（切视图时 binding 需重建）
-          teardownEntry();
-          activeEA = (data && data.ea) || ea0;
-          setupFromView();
-        } catch (e) {
-          console.error("[Image Hover Lightbox] onFileOpenHook", e);
+    const lifecycle = mods.globalMount.createGlobalMount({
+      document,
+      getViewKey: viewKeyOf,
+      resolveEa: (data) => (data && data.ea) || host,
+      beforeMount: (data, eaForView) => {
+        try { setViewForData(eaForView, data); } catch (error) {
+          throw new Error("无法绑定 Excalidraw 视图：" + (error && error.message));
         }
-      };
+        try {
+          if (typeof eaForView.registerThisAsViewEA === "function") eaForView.registerThisAsViewEA();
+        } catch (error) { console.warn("[" + SCRIPT_NAME + "] registerThisAsViewEA", error); }
+      },
+      createBinding: (eaForView, deps) => mods.eaBindings.createEaBindings(eaForView, {
+        getClientPointer: deps.getClientPointer,
+        canvasEl: viewMember(deps.data, "canvasEl"),
+        canvasRoot: viewMember(deps.data, "canvasRoot") ||
+          viewMember(deps.data, "containerEl") ||
+          (eaForView.targetView && (eaForView.targetView.containerEl || eaForView.targetView.contentEl)),
+        readBinary: (file) => app.vault.readBinary(file),
+        urlApi: URL,
+      }),
+      createEntry: (env) => {
+        const binding = env.binding;
+        return mods.hoverEntry.createHoverEntry({
+          readSnapshot: () => binding.readSnapshot(),
+          getClientPointer: env.getClientPointer,
+          isPreviewOpen: () => !!(sharedLightbox && sharedLightbox.isOpen()),
+          openPreview: (imageElement) => {
+            previewKey = env.key;
+            return binding.openPreview(imageElement, {
+              lightbox: getLightbox(),
+              notify,
+              isActive: env.isActive,
+            });
+          },
+          newButton: makeButton,
+        });
+      },
+      onUnmount: (record) => {
+        if (previewKey === record.key) {
+          if (sharedLightbox) sharedLightbox.close();
+          previewKey = null;
+        }
+      },
+      onError: (error) => console.error("[" + SCRIPT_NAME + "] view lifecycle", error),
+    });
+    mount = lifecycle.install(host);
 
-      const prevUnload = ea0.onViewUnloadHook;
-      ea0.onViewUnloadHook = (view) => {
-        try { if (typeof prevUnload === "function") prevUnload(view); } catch (e) {}
-        try { if (entry) entry.unmount(); } catch (e) {}
-      };
-    } else {
-      console.warn("[Image Hover Lightbox] window.ExcalidrawAutomate 不可用，钩子未注册");
+    let startupTimer = null;
+    const cleanup = () => {
+      if (startupTimer != null) {
+        clearTimeout(startupTimer);
+        startupTimer = null;
+      }
+      lifecycle.cleanup();
+      if (sharedLightbox) sharedLightbox.close();
+      sharedLightbox = null;
+      previewKey = null;
+      if (window.__exlCleanup === cleanup) window.__exlCleanup = null;
+      window.__exlReady = false;
+      window.__exlDebug = null;
+    };
+    window.__exlCleanup = cleanup;
+    window.__exlDebug = () => ({
+      views: lifecycle.getViewKeys(),
+      ready: window.__exlReady,
+      previewOpen: !!(sharedLightbox && sharedLightbox.isOpen()),
+    });
+    window.__exlReady = true;
+
+    // Startup Script 可能在已有标签恢复前执行。已有活动视图可立即挂载；
+    // 没有活动视图时只等待 onFileOpenHook，不调用 setView 伪造视图。
+    let activeEA = null;
+    try { if (typeof ea !== "undefined" && ea) activeEA = ea; } catch (error) { /* ignore */ }
+    if (!activeEA && host && host.targetView) activeEA = host;
+    if (activeEA && activeEA.targetView) {
+      try {
+        lifecycle.mountView({ ea: activeEA, view: activeEA.targetView });
+      } catch (error) { console.warn("[" + SCRIPT_NAME + "] active view", error); }
     }
-  }
+    startupTimer = setTimeout(() => {
+      if (!window.__exlReady) return;
+      if (activeEA && activeEA.targetView && lifecycle.getViewCount() === 0) {
+        try { lifecycle.mountView({ ea: activeEA, view: activeEA.targetView }); } catch (error) { /* 等待 hook */ }
+      }
+    }, 800);
 
-  // —— 4) 尝试立即 setup（如果启动时已有打开的画布）——
-  const ok = setupFromView();
-
-  // 延迟一次兜底（工作区恢复标签时 onFileOpenHook 可能已触发过）
-  setTimeout(() => {
-    if (!setupDone) setupFromView();
-  }, 1200);
-
-  // 调试
-  window.__exlDebug = () => {
-    const s = binding ? binding.readSnapshot() : { images: [], pointer: lastClient, view: { zoom: 0 } };
-    console.log("[Image Hover Lightbox]", s, lastClient, "setupDone=" + setupDone);
-    notify(
-      "images=" + s.images.length + " ptr=(" +
-      Math.round(s.pointer.x) + "," + Math.round(s.pointer.y) +
-      ") zoom=" + s.view.zoom + " v=" + SCRIPT_VERSION + " ready=" + setupDone
-    );
-    return s;
-  };
-
-  window.__exlReady = true;
-
-  if (ok) {
-    let n = 0;
-    try { n = mods.filterImageElements(activeEA.getViewElements() || []).length; } catch (e) { n = -1; }
-    notify(
-      "Image Hover Lightbox v" + SCRIPT_VERSION + " 已启用（" + n + " 张图）。悬停 → 全屏图标。诊断: __exlDebug()"
-    );
-  } else {
-    notify(
-      "Image Hover Lightbox v" + SCRIPT_VERSION + " 已注册钩子。打开 Excalidraw 画布后自动启用。诊断: __exlDebug()"
-    );
+    notify("「" + SCRIPT_NAME + "」已注册全局挂载。打开 Excalidraw 画布后悬停图片 → 点右上角全屏图标。", 5000);
+  } catch (error) {
+    console.error("[" + SCRIPT_NAME + "]", error);
+    notify("启用失败：" + (error && error.message), 7000);
   }
 })();

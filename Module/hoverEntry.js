@@ -99,6 +99,18 @@ function createHoverEntry(env) {
   let button = null;
   let mounted = false;
   let lastHitEl = null;
+  let lastAnchor = null;
+  let activationHandled = false;
+
+  function isPointerOverButton() {
+    if (!button || typeof button.getBoundingClientRect !== "function") return false;
+    if (typeof env.getClientPointer !== "function") return false;
+    const point = env.getClientPointer();
+    if (!point || typeof point.x !== "number" || typeof point.y !== "number") return false;
+    const rect = button.getBoundingClientRect();
+    return point.x >= rect.left && point.x <= rect.right &&
+      point.y >= rect.top && point.y <= rect.bottom;
+  }
 
   function ensureButton() {
     if (button) return button;
@@ -125,20 +137,33 @@ function createHoverEntry(env) {
     }
     if (button) {
       button.style.display = "none";
-      const onDown = (e) => {
+      const stopButtonEvent = (e) => {
         if (typeof e.stopPropagation === "function") e.stopPropagation();
         if (typeof e.preventDefault === "function") e.preventDefault();
         if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+      };
+      const activate = (e) => {
+        stopButtonEvent(e);
+        // 一个物理点击可能依次产生 pointerdown/mousedown/click；只打开一次。
+        // pointerdown 是下一次物理操作的明确起点，即使上一轮没有 click 也要重置。
+        if (e.type === "pointerdown" && activationHandled) activationHandled = false;
+        if (activationHandled) {
+          if (e.type === "click") activationHandled = false;
+          return;
+        }
+        activationHandled = true;
         if (lastHitEl && typeof env.openPreview === "function") env.openPreview(lastHitEl);
+        // 键盘或测试直接触发 click 时，没有 pointerdown 帮忙解锁。
+        if (e.type === "click") activationHandled = false;
       };
       // 用 capture 抢在 Excalidraw 之前
-      button.addEventListener("pointerdown", onDown, true);
-      button.addEventListener("mousedown", onDown, true);
-      button.addEventListener("click", onDown, true);
+      button.addEventListener("pointerdown", activate, true);
+      button.addEventListener("mousedown", activate, true);
+      button.addEventListener("click", activate, true);
       button._cleanupEntry = () => {
-        button.removeEventListener("pointerdown", onDown, true);
-        button.removeEventListener("mousedown", onDown, true);
-        button.removeEventListener("click", onDown, true);
+        button.removeEventListener("pointerdown", activate, true);
+        button.removeEventListener("mousedown", activate, true);
+        button.removeEventListener("click", activate, true);
       };
     }
     return button;
@@ -150,16 +175,29 @@ function createHoverEntry(env) {
     if (!button) ensureButton();
     const snap = env.readSnapshot();
     const previewOpen = env.isPreviewOpen ? env.isPreviewOpen() : false;
-    const r = decideEntrySnapshot(
-      snap.pointer, snap.images, snap.view, snap.container,
-      Object.assign({ previewOpen }, snap.opts || {})
-    );
-    lastHitEl = r.hitEl;
-    const visible = gate.update(r.anchor != null);
+    const pointerOverButton = typeof env.isPointerOverButton === "function"
+      ? env.isPointerOverButton(button)
+      : isPointerOverButton();
+    const pointerInside = snap.pointerInside !== false;
+    const r = pointerInside
+      ? decideEntrySnapshot(
+        snap.pointer, snap.images, snap.view, snap.container,
+        Object.assign({ previewOpen }, snap.opts || {})
+      )
+      : { hitEl: null, anchor: null };
+    if (r.hitEl) lastHitEl = r.hitEl;
+    if (r.anchor) lastAnchor = r.anchor;
+    if (previewOpen) {
+      gate.update(false);
+      if (button) button.style.display = "none";
+      return;
+    }
+    const visible = gate.update((pointerInside && r.anchor != null) || pointerOverButton);
     if (!button) return;
-    if (visible && r.anchor) {
-      button.style.left = r.anchor.x + "px";
-      button.style.top = r.anchor.y + "px";
+    const anchor = r.anchor || lastAnchor;
+    if (visible && anchor) {
+      button.style.left = anchor.x + "px";
+      button.style.top = anchor.y + "px";
       button.style.display = "block";
     } else {
       button.style.display = "none";
@@ -177,6 +215,9 @@ function createHoverEntry(env) {
   function unmount() {
     if (!mounted) return;
     mounted = false;
+    activationHandled = false;
+    lastHitEl = null;
+    lastAnchor = null;
     if (button) {
       if (button._cleanupEntry) button._cleanupEntry();
       if (button.parentNode) button.parentNode.removeChild(button);

@@ -29,24 +29,41 @@ function createLightbox(dom, opts) {
   const minScale = opts.minScale;
   const maxScale = opts.maxScale;
 
-  let state = null; // { mask, imageEl, scale, panX, panY }
+  let state = null; // { mask, imageEl, scale, panX, panY, source, released }
   let cleanup = null;
   let lastError = null;
+  let generation = 0;
 
   function isOpen() {
     return state !== null;
   }
 
+  function releaseSource(current) {
+    if (!current || current.released) return;
+    current.released = true;
+    const release = current.source && (
+      current.source.release ||
+      (current.source.source && current.source.source.release)
+    );
+    if (typeof release === "function") {
+      try { release(); } catch (e) { /* 资源释放失败不阻塞关闭 */ }
+    }
+  }
+
   function close() {
     if (!state) return false;
+    const current = state;
+    generation += 1;
     if (cleanup) { try { cleanup(); } catch (e) { /* 忽略卸载异常 */ } }
     cleanup = null;
-    try { dom.remove(state.mask); } catch (e) { /* 忽略 */ }
+    try { dom.remove(current.mask); } catch (e) { /* 忽略 */ }
     state = null;
+    releaseSource(current);
     return true;
   }
 
-  function _fail(err) {
+  function _fail(err, expectedGeneration, expectedState) {
+    if (expectedGeneration !== generation || expectedState !== state) return;
     lastError = err;
     close();
     if (typeof opts.onError === "function") opts.onError(err);
@@ -59,12 +76,22 @@ function createLightbox(dom, opts) {
   function open(source) {
     close(); // 单例替换：不堆叠
     lastError = null;
+    const currentGeneration = ++generation;
 
     const mask = dom.createLayer();
     const imageEl = dom.createImage();
     if (mask.appendChild) mask.appendChild(imageEl);
     dom.append(mask);
-    state = { mask, imageEl, scale: 1, panX: 0, panY: 0 };
+    state = {
+      mask,
+      imageEl,
+      scale: 1,
+      panX: 0,
+      panY: 0,
+      source: source,
+      released: false,
+    };
+    const currentState = state;
 
     if (typeof dom.wire === "function") {
       cleanup = dom.wire(state) || null;
@@ -76,11 +103,11 @@ function createLightbox(dom, opts) {
       try {
         out = load(imageEl, source);
       } catch (err) {
-        _fail(err);
+        _fail(err, currentGeneration, currentState);
         return;
       }
       if (out && typeof out.then === "function") {
-        out.then(null, (err) => _fail(err));
+        out.then(null, (err) => _fail(err, currentGeneration, currentState));
       }
     }
   }
@@ -145,7 +172,7 @@ function createLightbox(dom, opts) {
  * 用原生 document/window，事件接线含：点遮罩空白/大图、ESC、滚轮缩放、拖动。
  * @param {() => Controller} [getController] 返回当前 lightbox 控制器（用于事件回调）
  */
-function buildRealDom(getController) {
+  function buildRealDom(getController) {
   const root = (typeof document !== "undefined" && document) || null;
   const view = (typeof window !== "undefined" && window) || null;
 
@@ -161,8 +188,20 @@ function buildRealDom(getController) {
 
   function applyTransform(st) {
     const vp = viewportSize();
-    const base = Math.min(vp.width, vp.height) * 0.9;
+    const naturalW = st.imageEl.naturalWidth || 0;
+    const naturalH = st.imageEl.naturalHeight || 0;
+    const c = ctrl();
+    if (!st.hasFitted && naturalW > 0 && naturalH > 0 && c) {
+      c.setScale(c.fitScale(naturalW, naturalH, vp.width, vp.height));
+      st.hasFitted = true;
+    }
+    const base = naturalW > 0 ? naturalW : Math.min(vp.width, vp.height) * 0.9;
     st.imageEl.style.width = st.scale * base + "px";
+    if (naturalW > 0 && naturalH > 0) {
+      st.imageEl.style.height = st.scale * naturalH + "px";
+    } else {
+      st.imageEl.style.height = "auto";
+    }
     st.imageEl.style.transform = `translate(${st.panX}px, ${st.panY}px)`;
   }
 
@@ -199,6 +238,10 @@ function buildRealDom(getController) {
     wire(st) {
       const mask = st.mask;
       const img = st.imageEl;
+
+      // loadImage 在 wire 之后设置 src；监听 load，按图片真实尺寸重新 fit。
+      const loadHandler = () => applyTransform(st);
+      img.addEventListener("load", loadHandler);
 
       // 点遮罩：target 为大图本体 → 不关；否则（遮罩空白）→ 关
       const clickHandler = (e) => {
@@ -256,6 +299,7 @@ function buildRealDom(getController) {
       applyTransform(st);
 
       return function cleanup() {
+        img.removeEventListener("load", loadHandler);
         mask.removeEventListener("click", clickHandler);
         root.removeEventListener("keydown", keyHandler);
         mask.removeEventListener("wheel", wheelHandler);
