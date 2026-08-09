@@ -1,7 +1,7 @@
 # Image Hover Lightbox · 图片悬停放大
 
 > Part of **[Otto OBplugins](https://github.com/otto-OBplugins)** · Excalidraw script series  
-> **版本 `1.0.1`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)
+> **版本 `1.0.2`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)
 > 安装目录：[excalidraw-scripts-catalog](https://github.com/otto-OBplugins/excalidraw-scripts-catalog)
 
 在 Obsidian Excalidraw 画布中：
@@ -40,6 +40,10 @@ https://raw.githubusercontent.com/otto-OBplugins/excalidraw-scripts-catalog/main
 > 首次运行需要可访问 GitHub raw 的网络。脚本会把模块缓存到 vault：
 > `Excalidraw/Module/otto-OBplugins/image-hover-lightbox/`  
 > 版本升级时会按 `VERSION` 尝试刷新缓存模块；网络失败时继续使用已有缓存。
+
+启动脚本会等待 `ExcalidrawAutomate` 就绪，轮询间隔 250ms，最长等待 30 秒。配置一次 Startup Script 后，打开 Excalidraw 画布即可自动挂载，不需要每次重新运行脚本。
+
+悬停入口尺寸固定为：按钮容器 **30×30 CSS px**，SVG 图标 **16×16 CSS px**。按钮使用 Flex 居中，图标右上角距离图片边缘 6px。
 
 ---
 

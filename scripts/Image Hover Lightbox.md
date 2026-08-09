@@ -1,6 +1,6 @@
 /*
 Image Hover Lightbox / 图片悬停放大
-version: 1.0.1
+version: 1.0.2
 repo: https://github.com/otto-OBplugins/excalidraw-image-hover-lightbox
 Hover an image -> fullscreen-corner button -> mask lightbox (click outside / Esc to close).
 
@@ -13,7 +13,7 @@ Enable:
   "use strict";
 
   const SCRIPT_NAME = "Image Hover Lightbox";
-  const SCRIPT_VERSION = "1.0.1";
+  const SCRIPT_VERSION = "1.0.2";
   const REPO_RAW =
     "https://raw.githubusercontent.com/otto-OBplugins/excalidraw-image-hover-lightbox/main";
   const CACHE_DIR = "Excalidraw/Module/otto-OBplugins/image-hover-lightbox";
@@ -25,14 +25,15 @@ Enable:
     globalMount: "globalMount.js",
   };
 
-  const FULLSCREEN_ICON_SVG =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
-    'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<path d="M8 3H5a2 2 0 0 0-2 2v3"/>' +
-    '<path d="M21 8V5a2 2 0 0 0-2-2h-3"/>' +
-    '<path d="M3 16v3a2 2 0 0 0 2 2h3"/>' +
-    '<path d="M16 21h3a2 2 0 0 0 2-2v-3"/>' +
-    "</svg>";
+  const BOOT_POLL_MS = 250;
+  const BOOT_TIMEOUT_MS = 30000;
+
+  // 重复运行时同时取消上一轮的等待，避免旧脚本在稍后拿到 host 后又注册一套 hooks。
+  const bootId = (window.__exlBootId || 0) + 1;
+  window.__exlBootId = bootId;
+  if (typeof window.__exlBootCancel === "function") {
+    try { window.__exlBootCancel(); } catch (error) { console.warn("[" + SCRIPT_NAME + "] cancel boot", error); }
+  }
 
   // 重复运行时先清理上一轮，避免旧 hooks、计时器和按钮叠加。
   if (window.__exlCleanup) {
@@ -127,6 +128,49 @@ Enable:
     return null;
   };
 
+  let bootTimer = null;
+  let bootResolve = null;
+  let bootCancelled = false;
+  const isCurrentBoot = () => !bootCancelled && window.__exlBootId === bootId;
+  const cancelBoot = () => {
+    bootCancelled = true;
+    if (bootTimer != null) {
+      clearTimeout(bootTimer);
+      bootTimer = null;
+    }
+    if (bootResolve) {
+      const resolve = bootResolve;
+      bootResolve = null;
+      resolve(null);
+    }
+    if (window.__exlBootCancel === cancelBoot) window.__exlBootCancel = null;
+  };
+  window.__exlBootCancel = cancelBoot;
+
+  const waitForHookHost = () => new Promise((resolve) => {
+    const startedAt = Date.now();
+    bootResolve = resolve;
+
+    const finish = (host) => {
+      if (bootTimer != null) {
+        clearTimeout(bootTimer);
+        bootTimer = null;
+      }
+      if (bootResolve === resolve) bootResolve = null;
+      if (window.__exlBootCancel === cancelBoot) window.__exlBootCancel = null;
+      resolve(host);
+    };
+
+    const poll = () => {
+      if (!isCurrentBoot()) return finish(null);
+      const host = getHookHost();
+      if (host) return finish(host);
+      if (Date.now() - startedAt >= BOOT_TIMEOUT_MS) return finish(null);
+      bootTimer = setTimeout(poll, BOOT_POLL_MS);
+    };
+    poll();
+  });
+
   const viewMember = (data, name) => {
     const candidates = [
       data && data[name],
@@ -211,29 +255,23 @@ Enable:
   };
 
   try {
-    const mods = await loadModules();
-    const host = getHookHost();
+    const host = await waitForHookHost();
     if (!host) {
-      notify("「" + SCRIPT_NAME + "」找不到 ExcalidrawAutomate，未注册全局挂载。", 7000);
+      if (isCurrentBoot()) {
+        notify("「" + SCRIPT_NAME + "」等待 ExcalidrawAutomate 超时，未注册全局挂载。", 7000);
+      }
       return;
     }
+    if (!isCurrentBoot()) return;
+    const mods = await loadModules();
+    if (!isCurrentBoot()) return;
 
     let sharedLightbox = null;
     let previewKey = null;
     let mount = null;
 
     const makeButton = () => {
-      const button = document.createElement("div");
-      button.className = "excalidraw-hover-entry-btn";
-      button.title = "查看大图";
-      button.setAttribute("aria-label", "查看大图");
-      button.innerHTML = FULLSCREEN_ICON_SVG;
-      button.style.cssText =
-        "position:fixed;z-index:2147483000;cursor:pointer;width:30px;height:30px;" +
-        "display:flex;align-items:center;justify-content:center;border-radius:8px;" +
-        "background:rgba(20,20,20,.78);color:#fff;user-select:none;pointer-events:auto;" +
-        "box-shadow:0 2px 10px rgba(0,0,0,.4);";
-      return button;
+      return mods.hoverEntry.createDefaultButton(document);
     };
 
     const getLightbox = () => {
@@ -301,6 +339,7 @@ Enable:
 
     let startupTimer = null;
     const cleanup = () => {
+      cancelBoot();
       if (startupTimer != null) {
         clearTimeout(startupTimer);
         startupTimer = null;
@@ -321,22 +360,29 @@ Enable:
     });
     window.__exlReady = true;
 
-    // Startup Script 可能在已有标签恢复前执行。已有活动视图可立即挂载；
-    // 没有活动视图时只等待 onFileOpenHook，不调用 setView 伪造视图。
-    let activeEA = null;
-    try { if (typeof ea !== "undefined" && ea) activeEA = ea; } catch (error) { /* ignore */ }
-    if (!activeEA && host && host.targetView) activeEA = host;
-    if (activeEA && activeEA.targetView) {
+    // Startup Script 可能在已有标签恢复前执行。只对确认存在的活动视图挂载，
+    // 并在短时间内重试恢复过程，不调用 setView 伪造视图。
+    const mountActiveView = () => {
+      if (lifecycle.getViewCount() > 0) return true;
+      const activeEA = getHookHost() || host;
+      if (!activeEA || !activeEA.targetView) return false;
       try {
         lifecycle.mountView({ ea: activeEA, view: activeEA.targetView });
-      } catch (error) { console.warn("[" + SCRIPT_NAME + "] active view", error); }
-    }
-    startupTimer = setTimeout(() => {
-      if (!window.__exlReady) return;
-      if (activeEA && activeEA.targetView && lifecycle.getViewCount() === 0) {
-        try { lifecycle.mountView({ ea: activeEA, view: activeEA.targetView }); } catch (error) { /* 等待 hook */ }
+        return lifecycle.getViewCount() > 0;
+      } catch (error) {
+        return false;
       }
-    }, 800);
+    };
+    if (!mountActiveView()) {
+      const startedAt = Date.now();
+      const retryActiveView = () => {
+        startupTimer = null;
+        if (!window.__exlReady || !isCurrentBoot()) return;
+        if (mountActiveView() || Date.now() - startedAt >= BOOT_TIMEOUT_MS) return;
+        startupTimer = setTimeout(retryActiveView, BOOT_POLL_MS);
+      };
+      startupTimer = setTimeout(retryActiveView, BOOT_POLL_MS);
+    }
 
     notify("「" + SCRIPT_NAME + "」已注册全局挂载。打开 Excalidraw 画布后悬停图片 → 点右上角全屏图标。", 5000);
   } catch (error) {

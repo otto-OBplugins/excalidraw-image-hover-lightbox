@@ -20,6 +20,42 @@ const geo = require("./geometry.js");
 
 const SMALL_DEFAULT = { minWidth: 48, minHeight: 48 };
 const INSET_DEFAULT = { x: 6, y: 6 };
+const BUTTON_SIZE = geo.BUTTON_SIZE || 30;
+const BUTTON_ICON_SIZE = geo.BUTTON_ICON_SIZE || 16;
+
+/**
+ * 创建默认悬停入口按钮。
+ *
+ * 按钮容器与图标尺寸在这里集中定义，几何模块只负责用同一容器尺寸
+ * 计算屏幕锚点，避免 CSS 与坐标常量再次分叉。
+ */
+function createDefaultButton(doc) {
+  const root = doc || (typeof document !== "undefined" ? document : null);
+  if (!root || typeof root.createElement !== "function") return null;
+
+  const button = root.createElement("div");
+  button.className = "excalidraw-hover-entry-btn";
+  button.title = "查看大图";
+  if (typeof button.setAttribute === "function") {
+    button.setAttribute("aria-label", "查看大图");
+  }
+  button.innerHTML =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + BUTTON_ICON_SIZE + '" height="' + BUTTON_ICON_SIZE + '" viewBox="0 0 24 24" fill="none" ' +
+    'style="display:block;width:' + BUTTON_ICON_SIZE + 'px;height:' + BUTTON_ICON_SIZE + 'px;flex:0 0 ' + BUTTON_ICON_SIZE + 'px;pointer-events:none;" ' +
+    'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M8 3H5a2 2 0 0 0-2 2v3"/>' +
+    '<path d="M21 8V5a2 2 0 0 0-2-2h-3"/>' +
+    '<path d="M3 16v3a2 2 0 0 0 2 2h3"/>' +
+    '<path d="M16 21h3a2 2 0 0 0 2-2v-3"/>' +
+    "</svg>";
+  button.style.cssText =
+    "position:fixed;z-index:2147483000;cursor:pointer;width:" + BUTTON_SIZE + "px;height:" + BUTTON_SIZE + "px;" +
+    "display:flex;align-items:center;justify-content:center;" +
+    "border-radius:6px;background:rgba(0,0,0,.72);color:#fff;user-select:none;" +
+    "box-sizing:border-box;padding:0;border:0;line-height:0;pointer-events:auto;" +
+    "box-shadow:0 2px 8px rgba(0,0,0,.35);";
+  return button;
+}
 
 /**
  * 单次命中决策。
@@ -116,24 +152,9 @@ function createHoverEntry(env) {
     if (button) return button;
     if (env.newButton) {
       button = env.newButton();
-    } else if (doc) {
+    } else {
       // 默认：四角「全屏/展开」图标（非放大镜、非方案类文档图标）
-      button = doc.createElement("div");
-      button.className = "excalidraw-hover-entry-btn";
-      button.innerHTML =
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
-        'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-        '<path d="M8 3H5a2 2 0 0 0-2 2v3"/>' +
-        '<path d="M21 8V5a2 2 0 0 0-2-2h-3"/>' +
-        '<path d="M3 16v3a2 2 0 0 0 2 2h3"/>' +
-        '<path d="M16 21h3a2 2 0 0 0 2-2v-3"/>' +
-        "</svg>";
-      button.style.cssText =
-        "position:fixed;z-index:2147483000;cursor:pointer;width:28px;height:28px;" +
-        "display:flex;align-items:center;justify-content:center;" +
-        "border-radius:6px;background:rgba(0,0,0,.72);color:#fff;user-select:none;" +
-        "line-height:1;pointer-events:auto;box-shadow:0 2px 8px rgba(0,0,0,.35);";
-      button.title = "查看大图";
+      button = createDefaultButton(doc);
     }
     if (button) {
       button.style.display = "none";
@@ -198,7 +219,8 @@ function createHoverEntry(env) {
     if (visible && anchor) {
       button.style.left = anchor.x + "px";
       button.style.top = anchor.y + "px";
-      button.style.display = "block";
+      // 保留按钮工厂的 flex 布局；使用 block 会让图标失去居中约束。
+      button.style.display = "flex";
     } else {
       button.style.display = "none";
     }
@@ -232,6 +254,9 @@ module.exports = {
   decideEntrySnapshot,
   createHoverGate,
   createHoverEntry,
+  createDefaultButton,
   SMALL_DEFAULT,
   INSET_DEFAULT,
+  BUTTON_SIZE,
+  BUTTON_ICON_SIZE,
 };

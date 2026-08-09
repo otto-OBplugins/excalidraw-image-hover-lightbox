@@ -124,7 +124,9 @@ function isInViewport(aabb, viewportSize) {
 }
 
 const DEFAULT_INSET = { x: 6, y: 6 };
-const BUTTON_SIZE = 28;
+// 悬停按钮的真实固定尺寸；入口 CSS 与屏幕锚点必须共用这组值。
+const BUTTON_SIZE = 30;
+const BUTTON_ICON_SIZE = 16;
 
 /** 图片内右上角按钮左上角（screen fixed） */
 function buttonAnchorScreen(el, view, container, inset) {
@@ -183,4 +185,5 @@ module.exports = {
   DEFAULT_SMALL: DEFAULT_SMALL,
   DEFAULT_INSET: DEFAULT_INSET,
   BUTTON_SIZE: BUTTON_SIZE,
+  BUTTON_ICON_SIZE: BUTTON_ICON_SIZE,
 };
