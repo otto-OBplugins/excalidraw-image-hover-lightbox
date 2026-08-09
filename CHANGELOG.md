@@ -3,6 +3,13 @@
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。  
 **每个脚本仓库独立版本**，与系列目录仓无关。
 
+## [Unreleased]
+
+### Documentation
+
+- 补充卸载并重新安装 Excalidraw 后检查 Startup Script 的说明。
+- 补充一键安装器常见的 `Scripts/Downloaded/` 路径，以及修改配置后重启 Obsidian 的说明。
+
 ## [1.0.4] - 2026-08-09
 
 ### Fixed
