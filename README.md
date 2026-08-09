@@ -1,7 +1,7 @@
 # Image Hover Lightbox · 图片悬停放大
 
 > Part of **[Otto OBplugins](https://github.com/otto-OBplugins)** · Excalidraw script series  
-> **版本 `0.2.1`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)  
+> **版本 `0.2.2`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)  
 > 安装目录：[excalidraw-scripts-catalog](https://github.com/otto-OBplugins/excalidraw-scripts-catalog)
 
 在 Obsidian Excalidraw 画布中：
