@@ -1,7 +1,7 @@
 # Image Hover Lightbox · 图片悬停放大
 
 > Part of **[Otto OBplugins](https://github.com/otto-OBplugins)** · Excalidraw script series  
-> **版本 `1.0.3`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)
+> **版本 `1.0.4`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)
 > 安装目录：[excalidraw-scripts-catalog](https://github.com/otto-OBplugins/excalidraw-scripts-catalog)
 
 在 Obsidian Excalidraw 画布中：
@@ -43,7 +43,7 @@ https://raw.githubusercontent.com/otto-OBplugins/excalidraw-scripts-catalog/main
 
 启动脚本会等待 `ExcalidrawAutomate` 就绪，轮询间隔 250ms，最长等待 30 秒。配置一次 Startup Script 后，打开 Excalidraw 画布即可自动挂载，不需要每次重新运行脚本。
 
-工作区恢复已打开标签时，`onFileOpenHook` 可能不会触发；脚本会让 `ExcalidrawAutomate.setView("active")` 选择当前活动绘图，再对确认存在且已加载的视图做延迟兜底。
+工作区恢复已打开标签时，`onFileOpenHook` 可能不会触发；脚本会在每次恢复轮询中让 `ExcalidrawAutomate.setView("active")` 重新选择当前活动绘图，再对确认存在且已加载的视图做延迟兜底。
 
 悬停入口尺寸固定为：按钮容器 **30×30 CSS px**，SVG 图标 **16×16 CSS px**。按钮使用 Flex 居中，图标右上角距离图片边缘 6px。
 
