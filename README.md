@@ -12,7 +12,8 @@
 
 不拦截图片的选中 / 拖动。
 
-![Image Hover Lightbox feature preview](./images/scripts-image-hover-lightbox.png)
+![Lightbox preview](./images/scripts-image-hover-lightbox.png)
+![Hover entry](./images/scripts-image-hover-lightbox-hover.png)
 
 ---
 
