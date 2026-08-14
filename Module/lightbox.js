@@ -171,10 +171,13 @@ function createLightbox(dom, opts) {
  * 真实环境（Obsidian 浏览器上下文）DOM adapter。
  * 用原生 document/window，事件接线含：点遮罩空白/大图、ESC、滚轮缩放、拖动。
  * @param {() => Controller} [getController] 返回当前 lightbox 控制器（用于事件回调）
+ * @param {{document?:Document,window?:Window}} [domOptions] 视图所属文档与窗口
  */
-  function buildRealDom(getController) {
-  const root = (typeof document !== "undefined" && document) || null;
-  const view = (typeof window !== "undefined" && window) || null;
+  function buildRealDom(getController, domOptions) {
+  domOptions = domOptions || {};
+  const root = domOptions.document || (typeof document !== "undefined" && document) || null;
+  const view = domOptions.window || (root && root.defaultView) ||
+    (typeof window !== "undefined" && window) || null;
 
   const ctrl = () => (typeof getController === "function" ? getController() : null);
 
@@ -314,10 +317,11 @@ function createLightbox(dom, opts) {
 /**
  * 便捷工厂：给真实环境（Obsidian 页面）使用的 Lightbox。
  * loadImage 由调用方提供（把图片文件解析为 url 赋给 imageEl.src）。
+ * domOptions 可指定视图所属的 document/window，支持 Popout 文档隔离。
  */
-function buildLightbox(opts) {
+function buildLightbox(opts, domOptions) {
   let ctrl = null;
-  const dom = buildRealDom(() => ctrl);
+  const dom = buildRealDom(() => ctrl, domOptions);
   ctrl = createLightbox(dom, opts);
   return ctrl;
 }

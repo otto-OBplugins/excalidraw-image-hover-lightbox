@@ -10,6 +10,18 @@
 - 补充卸载并重新安装 Excalidraw 后检查 Startup Script 的说明。
 - 补充一键安装器常见的 `Scripts/Downloaded/` 路径，以及修改配置后重启 Obsidian 的说明。
 
+## [1.1.0] - 2026-08-14
+
+### Changed
+
+- 官方入口改为由主项目构建的自包含脚本，不再运行时下载、缓存或动态执行远程模块。
+- 手动模块与测试实现保持来自主项目同一源码。
+
+### Fixed
+
+- `onFileOpenHook` 不再长期持有回调结束后会销毁的临时 EA；每个 Excalidraw view 使用独立稳定 EA，并在卸载时释放。
+- 按 view 的 `ownerDocument` / `ownerWindow` 隔离悬停按钮、事件监听和 Lightbox DOM。
+
 ## [1.0.4] - 2026-08-09
 
 ### Fixed

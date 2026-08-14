@@ -55,15 +55,17 @@ function createGlobalMount(options) {
     return key;
   }
 
-  function removeListener(type, listener) {
-    if (document && typeof document.removeEventListener === "function") {
-      document.removeEventListener(type, listener, true);
+  function removeListener(record, type, listener) {
+    const target = (record && record.document) || document;
+    if (target && typeof target.removeEventListener === "function") {
+      target.removeEventListener(type, listener, true);
     }
   }
 
-  function addListener(type, listener) {
-    if (document && typeof document.addEventListener === "function") {
-      document.addEventListener(type, listener, true);
+  function addListener(record, type, listener) {
+    const target = (record && record.document) || document;
+    if (target && typeof target.addEventListener === "function") {
+      target.addEventListener(type, listener, true);
     }
   }
 
@@ -75,19 +77,29 @@ function createGlobalMount(options) {
       clearIntervalFn(record.timer);
       record.timer = null;
     }
-    removeListener("pointermove", record.onPointer);
-    removeListener("mousemove", record.onPointer);
-    removeListener("pointerdown", record.onPointer);
+    removeListener(record, "pointermove", record.onPointer);
+    removeListener(record, "mousemove", record.onPointer);
+    removeListener(record, "pointerdown", record.onPointer);
 
     if (typeof options.onUnmount === "function") {
       try { options.onUnmount(record); } catch (error) {
         if (typeof options.onError === "function") options.onError(error, record);
       }
     }
-    try {
-      record.entry.unmount();
-    } catch (error) {
-      if (typeof options.onError === "function") options.onError(error, record);
+    if (record.entry && typeof record.entry.unmount === "function") {
+      try {
+        record.entry.unmount();
+      } catch (error) {
+        if (typeof options.onError === "function") options.onError(error, record);
+      }
+    }
+    if (!record.eaReleased && typeof options.releaseEa === "function") {
+      record.eaReleased = true;
+      try {
+        options.releaseEa(record.ea, record);
+      } catch (error) {
+        if (typeof options.onError === "function") options.onError(error, record);
+      }
     }
     return true;
   }
@@ -129,7 +141,9 @@ function createGlobalMount(options) {
       binding: null,
       entry: null,
       timer: null,
+      document: document,
       tornDown: false,
+      eaReleased: false,
       getClientPointer: () => lastClient,
       onPointer: (event) => {
         if (event && typeof event.clientX === "number" && typeof event.clientY === "number") {
@@ -143,34 +157,39 @@ function createGlobalMount(options) {
       },
     };
 
-    if (typeof options.beforeMount === "function") {
-      options.beforeMount(data, ea, record);
-    }
-    record.binding = options.createBinding(ea, {
-      getClientPointer: record.getClientPointer,
-      data,
-    });
-    record.entry = options.createEntry({
-      key,
-      data,
-      ea,
-      record,
-      binding: record.binding,
-      getClientPointer: record.getClientPointer,
-      isActive: () => records.get(key) === record && !record.tornDown,
-    });
-    if (!record.entry || typeof record.entry.mount !== "function" ||
-        typeof record.entry.unmount !== "function" || typeof record.entry.update !== "function") {
-      throw new Error("globalMount: createEntry 返回值缺少 mount/unmount");
-    }
-
-    records.set(key, record);
     try {
+      if (typeof options.getDocument === "function") {
+        record.document = options.getDocument(data, ea) || document;
+      }
+      if (typeof options.beforeMount === "function") {
+        options.beforeMount(data, ea, record);
+      }
+      record.binding = options.createBinding(ea, {
+        getClientPointer: record.getClientPointer,
+        data,
+        document: record.document,
+      });
+      record.entry = options.createEntry({
+        key,
+        data,
+        ea,
+        record,
+        document: record.document,
+        binding: record.binding,
+        getClientPointer: record.getClientPointer,
+        isActive: () => records.get(key) === record && !record.tornDown,
+      });
+      if (!record.entry || typeof record.entry.mount !== "function" ||
+          typeof record.entry.unmount !== "function" || typeof record.entry.update !== "function") {
+        throw new Error("globalMount: createEntry 返回值缺少 mount/unmount");
+      }
+
+      records.set(key, record);
       record.entry.mount();
       record.entry.update();
-      addListener("pointermove", record.onPointer);
-      addListener("mousemove", record.onPointer);
-      addListener("pointerdown", record.onPointer);
+      addListener(record, "pointermove", record.onPointer);
+      addListener(record, "mousemove", record.onPointer);
+      addListener(record, "pointerdown", record.onPointer);
       record.timer = setIntervalFn(() => {
         if (record.tornDown) return;
         try {

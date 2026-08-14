@@ -1,7 +1,7 @@
 # Image Hover Lightbox · 图片悬停放大
 
 > Part of **[Otto OBplugins](https://github.com/otto-OBplugins)** · Excalidraw script series  
-> **版本 `1.0.4`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)
+> **版本 `1.1.0`** · [CHANGELOG](./CHANGELOG.md) · [维护说明](./MAINTAINING.md)
 > 安装目录：[excalidraw-scripts-catalog](https://github.com/otto-OBplugins/excalidraw-scripts-catalog)
 
 在 Obsidian Excalidraw 画布中：
@@ -11,6 +11,8 @@
 3. **点遮罩空白**或 **Esc** 关闭  
 
 不拦截图片的选中 / 拖动。
+
+![Image Hover Lightbox feature preview](./images/scripts-image-hover-lightbox.png)
 
 ---
 
@@ -41,9 +43,7 @@ https://raw.githubusercontent.com/otto-OBplugins/excalidraw-scripts-catalog/main
 
 图中的“加载期脚本（onload）”可以保持关闭。本脚本使用的是“启动期脚本（startup）”，两者不是同一项设置。
 
-> 首次运行需要可访问 GitHub raw 的网络。脚本会把模块缓存到 vault：
-> `Excalidraw/Module/otto-OBplugins/image-hover-lightbox/`  
-> 版本升级时会按 `VERSION` 尝试刷新缓存模块；网络失败时继续使用已有缓存。
+> 官方入口是自包含脚本。首次运行不要求访问 GitHub raw，也不下载或动态执行远程模块；只安装该脚本和同名 SVG 即可运行。
 
 启动脚本会等待 `ExcalidrawAutomate` 就绪，轮询间隔 250ms，最长等待 30 秒。配置一次 Startup Script 后，打开 Excalidraw 画布即可自动挂载，不需要每次重新运行脚本。
 
@@ -64,7 +64,7 @@ https://raw.githubusercontent.com/otto-OBplugins/excalidraw-scripts-catalog/main
 
 ## 手动安装
 
-1. 复制 `Module/*.js` 到 vault 的 `Excalidraw/Module/otto-OBplugins/image-hover-lightbox/`  
+1. 复制 `Module/*.js` 到 vault 的 `Excalidraw/Module/otto-OBplugins/image-hover-lightbox/`（仅手动开发或后备命令需要）
 2. 复制 `scripts/Image Hover Lightbox.md` + `.svg` 到 `Excalidraw/Scripts/`（如果使用 Excalidraw 一键安装器，实际目录通常是 `Excalidraw/Scripts/Downloaded/`）
 3. 配置 Startup Script，或在画布中运行脚本一次  
 4. （可选）复制 `scripts/Image Hover Lightbox Command.md`，供选中小图后手动打开预览
@@ -80,6 +80,7 @@ Module/                 # 可测纯逻辑 + 绑定层
   hoverEntry.js
   eaBindings.js
   globalMount.js
+  viewEa.js
 scripts/
   Image Hover Lightbox.md   # 脚本入口（可 install）
   Image Hover Lightbox Command.md # 可选后备命令
@@ -98,7 +99,7 @@ scripts/
 node --test
 ```
 
-入口会为每个 Excalidraw 叶子独立维护绑定、按钮、监听器和刷新计时器；关闭叶子时只清理该叶子。预览期间入口会隐藏，图片对象 URL 在关闭、替换或加载失败时释放。
+入口会为每个 Excalidraw 叶子独立维护稳定 EA、绑定、按钮、监听器和刷新计时器；关闭叶子时只清理该叶子。按钮和遮罩按 view 的 `ownerDocument` / `ownerWindow` 归属，预览期间入口会隐藏，图片对象 URL 在关闭、替换或加载失败时释放。Popout 仍需在实际 Vault 中验证。
 
 ---
 

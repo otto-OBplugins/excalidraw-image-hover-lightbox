@@ -130,7 +130,7 @@ function createHoverEntry(env) {
     throw new Error("hoverEntry: 需要 env.readSnapshot()");
   }
 
-  const doc = typeof document !== "undefined" ? document : null;
+  const doc = env.document || (typeof document !== "undefined" ? document : null);
   const gate = createHoverGate({ delay: env.delay, now: env.now });
   let button = null;
   let mounted = false;
