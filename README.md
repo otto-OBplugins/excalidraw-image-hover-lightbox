@@ -34,8 +34,12 @@ https://raw.githubusercontent.com/otto-OBplugins/excalidraw-scripts-catalog/main
 
 安装后任选其一启用：
 
-1. **自动加载（推荐）**：Excalidraw 设置 → **Startup Script** → 指向本脚本  
+1. **自动加载（推荐）**：Excalidraw 设置 → **Startup Script** → 选择 `Excalidraw/Scripts/Downloaded/Image Hover Lightbox.md`
 2. **手动**：打开画布 → 运行 **Image Hover Lightbox** 一次  
+
+![在 Excalidraw 设置中选择 Image Hover Lightbox 启动脚本](./images/startup-script-setting.png)
+
+图中的“加载期脚本（onload）”可以保持关闭。本脚本使用的是“启动期脚本（startup）”，两者不是同一项设置。
 
 > 首次运行需要可访问 GitHub raw 的网络。脚本会把模块缓存到 vault：
 > `Excalidraw/Module/otto-OBplugins/image-hover-lightbox/`  
