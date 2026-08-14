@@ -11,9 +11,8 @@
 3. **点遮罩空白**或 **Esc** 关闭  
 
 不拦截图片的选中 / 拖动。
-
-![Lightbox preview](./images/scripts-image-hover-lightbox.png)
 ![Hover entry](./images/scripts-image-hover-lightbox-hover.png)
+![Lightbox preview](./images/scripts-image-hover-lightbox.png)
 
 ---
 
